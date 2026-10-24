@@ -2,6 +2,7 @@ services:
   - type: web
     name: live-with-frens
     runtime: docker
+    plan: free
     region: singapore
     autoDeployTrigger: commit
     healthCheckPath: /
