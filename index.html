@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live with frens | Share Screen And Talk Live</title>
+    <meta
+      name="description"
+      content="Create a room, invite friends, share your screen, and talk live together in the browser."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="backdrop" aria-hidden="true"></div>
+
+    <main class="app-shell">
+      <section class="hero-panel">
+        <div class="hero-top">
+          <p class="eyebrow">Live with frens</p>
+          <span class="live-chip" id="roomStateBadge">Lobby</span>
+        </div>
+
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <p class="kicker">No login. No database. Just create, invite, and share.</p>
+            <h1>Aao ab dikkhata tumhe kaise karte hai maze</h1>
+            <p class="summary">
+              Make a room code, send the invite, share your screen, and let everyone
+              talk in real time with mic on or off whenever they want.
+            </p>
+          </div>
+
+          <div class="hero-note">
+            <h2>Perfect for</h2>
+            <ul>
+              <li>private match watch parties</li>
+              <li>screen-share rooms with voice chat</li>
+              <li>small groups on laptops or phones</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <aside class="control-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Room setup</p>
+              <h2>Create or join in seconds</h2>
+            </div>
+            <p>No accounts needed.</p>
+          </div>
+
+          <label class="field">
+            <span>Your name</span>
+            <input
+              id="nameInput"
+              type="text"
+              maxlength="32"
+              autocomplete="off"
+              placeholder="Example: Harsh"
+            />
+          </label>
+
+          <label class="field">
+            <span>Room code</span>
+            <input
+              id="roomInput"
+              type="text"
+              maxlength="24"
+              autocomplete="off"
+              placeholder="Create one or paste invite code"
+            />
+          </label>
+
+          <div class="button-stack compact">
+            <button id="createRoomButton" class="action-button primary" type="button">
+              Create room
+            </button>
+            <button id="joinRoomButton" class="action-button secondary" type="button">
+              Join room
+            </button>
+            <button id="copyInviteButton" class="action-button ghost" type="button">
+              Copy invite link
+            </button>
+            <button id="leaveRoomButton" class="action-button danger" type="button" disabled>
+              Leave room
+            </button>
+          </div>
+
+          <div class="panel-head room-controls">
+              <div>
+                <p class="panel-kicker">Live controls</p>
+                <h2>Talk and share</h2>
+              </div>
+            <p>Mic sabke liye, screen share sirf host ke liye.</p>
+          </div>
+
+          <div class="button-stack">
+            <button id="toggleMicButton" class="action-button secondary" type="button" disabled>
+              Turn mic on
+            </button>
+            <button
+              id="toggleScreenButton"
+              class="action-button secondary"
+              type="button"
+              disabled
+            >
+              Start screen share
+            </button>
+          </div>
+
+          <div class="status-grid">
+            <article class="status-card">
+              <span class="status-label">Room</span>
+              <strong id="roomValue">Not joined</strong>
+            </article>
+            <article class="status-card">
+              <span class="status-label">People</span>
+              <strong id="participantCountValue">0</strong>
+            </article>
+            <article class="status-card">
+              <span class="status-label">Mic</span>
+              <strong id="micValue">Off</strong>
+            </article>
+            <article class="status-card">
+              <span class="status-label">Share</span>
+              <strong id="shareValue">Off</strong>
+            </article>
+            <article class="status-card">
+              <span class="status-label">Signal</span>
+              <strong id="connectionValue">Disconnected</strong>
+            </article>
+            <article class="status-card">
+              <span class="status-label">You</span>
+              <strong id="selfNameValue">Guest</strong>
+            </article>
+          </div>
+
+        </aside>
+
+        <section class="stage-panel">
+          <div class="stage-grid">
+            <article class="video-card main-stage">
+              <div class="video-head">
+                <div>
+                  <p class="panel-kicker">Main stage</p>
+                  <h2>Shared screen</h2>
+                </div>
+                <span class="pill" id="stageLabel">Waiting for screen share</span>
+              </div>
+
+              <div class="video-shell">
+                <video id="stageVideo" autoplay playsinline></video>
+                <div id="stagePlaceholder" class="video-placeholder">
+                  <p>No one is sharing a screen yet.</p>
+                  <span>Join the room and press start screen share when you are ready.</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="video-card preview-stage">
+              <div class="video-head">
+                <div>
+                  <p class="panel-kicker">Your preview</p>
+                  <h2>Local share</h2>
+                </div>
+                <span class="pill subtle" id="previewLabel">Idle</span>
+              </div>
+
+              <div class="video-shell compact">
+                <video id="localPreviewVideo" autoplay playsinline muted></video>
+                <div id="localPreviewPlaceholder" class="video-placeholder">
+                  <p>Nothing shared yet.</p>
+                  <span>Your own screen preview appears here.</span>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="bottom-grid">
+            <article class="feed-card">
+              <div class="panel-head">
+                <div>
+                  <p class="panel-kicker">Participants</p>
+                  <h2>Who is in the room</h2>
+                </div>
+                <p>Mic and screen status update live.</p>
+              </div>
+
+              <div id="participantList" class="participant-list"></div>
+            </article>
+
+            <article class="feed-card">
+              <div class="panel-head">
+                <div>
+                  <p class="panel-kicker">Room activity</p>
+                  <h2>Realtime updates</h2>
+                </div>
+                <p>Join, leave, screen share, and signaling logs.</p>
+              </div>
+
+              <div id="activityFeed" class="activity-feed" aria-live="polite"></div>
+            </article>
+          </div>
+
+          <article class="feed-card wide-card">
+            <div class="panel-head">
+              <div>
+                <p class="panel-kicker">Room chat</p>
+                <h2>Drop quick messages</h2>
+              </div>
+              <p>Useful when someone is muted or reconnecting.</p>
+            </div>
+
+            <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+
+            <form id="chatForm" class="chat-form">
+              <input
+                id="chatInput"
+                type="text"
+                maxlength="240"
+                autocomplete="off"
+                placeholder="Type a message for everyone in the room"
+              />
+              <button class="action-button primary small" type="submit">Send</button>
+            </form>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <div id="audioDock" hidden></div>
+  </body>
+</html>

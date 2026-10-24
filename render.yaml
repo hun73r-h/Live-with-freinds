@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: live-with-frens
+    runtime: docker
+    region: singapore
+    autoDeployTrigger: commit
+    healthCheckPath: /
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: TURN_URL
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
