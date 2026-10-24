@@ -1,6 +1,6 @@
 # Live with frens
 
-Simple no-login watch-party rooms for your own screen-share sessions. Anyone can open the site, create a room code, invite friends, share their screen, and talk in real time with mic on or off.
+Simple no-login watch-party rooms. Anyone can open the site, create a room code and invite friends. The host can share their screen, and everyone can talk in real time with mic on or off.
 
 ## What this version does
 
