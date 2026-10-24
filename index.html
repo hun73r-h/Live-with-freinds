@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -9,6 +9,11 @@
       content="Create a room, invite friends, share your screen, and talk live together in the browser."
     />
     <link rel="stylesheet" href="./styles.css" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACcklEQVR42u2bO0sDQRSFt7SRFKlEdFGC4gM2iEEkIIJoJUpsfSBYCFqkFARtrBQLKwsR0ok2dkGwSaOWNpYWwV+Q/IPrnpCRcUnMPjJmdu8snG6XOffbuXdmZ3Ysq83Vlx6wXRVdVVzVXFHMVGt6Rwy25fdyb065KsUw4E5CTKlOwTuuqgkMXgixOX8FX0tw8HJqOK26fZVB8HJPSMkASoyC/6kJcrUnprKt5jDBFUDRao6VXAFULCaVv+2IYDEOviEDwAAI+WB6Oke5o0tauX2i1YfXnghtwwO8/BuAfnuc8mc3tPdJWgme4E0pADRQKH9oF7wQvAWFEAiA980vXt1TprBLw8sbPRHahgdvT1ACAHkmNzS5U9SmkMGL7C1ITfANwDk4+fXmdavmck+A164DkBvQ6e236gVBXpBvABh2RAPIP90AwJPwB6/aAphbG6X0yCBPAJvHE/RGC/Rcz9P64Rg/APvnUw0AQo9f87S0leELQOj6ZbaRGmwBCF2UZ8jODvEFIHR6lw1cKBMFQBRK3M8WgJDf2pBIAEFSIVEAMCoELYaJABBlOIw1AEyIos4MYwkAlR7TY5bfAoDRzY+iWABAwIAQdraXiM/h2K4HYA1eNIDFSN0AwJPwB69dB4ANiLisCcKr8lVhndJA7v7KVoW9lMUafK/2BIRa7VWYnSHVe4PyiKCL4En53qA379DderUzLAQPUeqR+T/AADAA1DaAYSpsfgfd6tYOgHeCEkaqJ1xKAWBGtv1eDx08no3y/48WKYAAws7yVAdviqABYACQ+Vna/C5vDkwwPzLD/tCUOTZnDk6ao7Pm8DTn4/Pfk17dHDGq9ksAAAAASUVORK5CYII="
+    />
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -17,17 +22,19 @@
     <main class="app-shell">
       <section class="hero-panel">
         <div class="hero-top">
-          <p class="eyebrow">Live with frens</p>
+          <p class="eyebrow"><img src="./logo.svg" alt="" width="30" height="30" style="vertical-align: middle; margin-right: 10px" />Live with frens</p>
           <span class="live-chip" id="roomStateBadge">Lobby</span>
         </div>
 
         <div class="hero-grid">
           <div class="hero-copy">
-            <p class="kicker">No login. No database. Just create, invite, and share.</p>
+            <p class="kicker">
+              No login. No database. Just create, invite, and share.
+            </p>
             <h1>Aao ab dikkhata tumhe kaise karte hai maze</h1>
             <p class="summary">
-              Make a room code, send the invite, share your screen, and let everyone
-              talk in real time with mic on or off whenever they want.
+              Make a room code, send the invite, share your screen, and let
+              everyone talk in real time with mic on or off whenever they want.
             </p>
           </div>
 
@@ -75,30 +82,52 @@
           </label>
 
           <div class="button-stack compact">
-            <button id="createRoomButton" class="action-button primary" type="button">
+            <button
+              id="createRoomButton"
+              class="action-button primary"
+              type="button"
+            >
               Create room
             </button>
-            <button id="joinRoomButton" class="action-button secondary" type="button">
+            <button
+              id="joinRoomButton"
+              class="action-button secondary"
+              type="button"
+            >
               Join room
             </button>
-            <button id="copyInviteButton" class="action-button ghost" type="button">
+            <button
+              id="copyInviteButton"
+              class="action-button ghost"
+              type="button"
+            >
               Copy invite link
             </button>
-            <button id="leaveRoomButton" class="action-button danger" type="button" disabled>
+            <button
+              id="leaveRoomButton"
+              class="action-button danger"
+              type="button"
+              disabled
+            >
               Leave room
             </button>
           </div>
 
           <div class="panel-head room-controls">
-              <div>
-                <p class="panel-kicker">Live controls</p>
-                <h2>Talk and share</h2>
-              </div>
-            <p>Mic sabke liye, screen share sirf host ke liye.</p>
+            <div>
+              <p class="panel-kicker">Live controls</p>
+              <h2>Talk and share</h2>
+            </div>
+            <p>Everyone can use the mic. Only the host can share the screen.</p>
           </div>
 
           <div class="button-stack">
-            <button id="toggleMicButton" class="action-button secondary" type="button" disabled>
+            <button
+              id="toggleMicButton"
+              class="action-button secondary"
+              type="button"
+              disabled
+            >
               Turn mic on
             </button>
             <button
@@ -137,7 +166,6 @@
               <strong id="selfNameValue">Guest</strong>
             </article>
           </div>
-
         </aside>
 
         <section class="stage-panel">
@@ -148,14 +176,19 @@
                   <p class="panel-kicker">Main stage</p>
                   <h2>Shared screen</h2>
                 </div>
-                <span class="pill" id="stageLabel">Waiting for screen share</span>
+                <span class="pill" id="stageLabel"
+                  >Waiting for screen share</span
+                >
               </div>
 
               <div class="video-shell">
                 <video id="stageVideo" autoplay playsinline></video>
                 <div id="stagePlaceholder" class="video-placeholder">
                   <p>No one is sharing a screen yet.</p>
-                  <span>Join the room and press start screen share when you are ready.</span>
+                  <span
+                    >Join the room and press start screen share when you are
+                    ready.</span
+                  >
                 </div>
               </div>
             </article>
@@ -170,7 +203,12 @@
               </div>
 
               <div class="video-shell compact">
-                <video id="localPreviewVideo" autoplay playsinline muted></video>
+                <video
+                  id="localPreviewVideo"
+                  autoplay
+                  playsinline
+                  muted
+                ></video>
                 <div id="localPreviewPlaceholder" class="video-placeholder">
                   <p>Nothing shared yet.</p>
                   <span>Your own screen preview appears here.</span>
@@ -201,7 +239,11 @@
                 <p>Join, leave, screen share, and signaling logs.</p>
               </div>
 
-              <div id="activityFeed" class="activity-feed" aria-live="polite"></div>
+              <div
+                id="activityFeed"
+                class="activity-feed"
+                aria-live="polite"
+              ></div>
             </article>
           </div>
 
@@ -214,7 +256,11 @@
               <p>Useful when someone is muted or reconnecting.</p>
             </div>
 
-            <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+            <div
+              id="chatMessages"
+              class="chat-messages"
+              aria-live="polite"
+            ></div>
 
             <form id="chatForm" class="chat-form">
               <input
@@ -224,7 +270,9 @@
                 autocomplete="off"
                 placeholder="Type a message for everyone in the room"
               />
-              <button class="action-button primary small" type="submit">Send</button>
+              <button class="action-button primary small" type="submit">
+                Send
+              </button>
             </form>
           </article>
         </section>
