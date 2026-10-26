@@ -37,10 +37,11 @@ const appState = {
   clientId: null,
   room: "",
   hostId: null,
-  displayName: "Guest",
+  displayName: "",
   joined: false,
   joiningRoom: false,
   iceServers: DEFAULT_ICE_SERVERS,
+  turnConfigured: false,
   rtcConfigReady: null,
   micTrack: null,
   micEnabled: false,
@@ -71,8 +72,20 @@ function nowLabel() {
 }
 
 function safeName() {
-  const cleaned = (nameInput.value || "").trim().slice(0, 32);
-  return cleaned || "Guest";
+  return (nameInput.value || "").trim().slice(0, 32);
+}
+
+function validateDisplayName() {
+  const displayName = safeName();
+  nameInput.setCustomValidity(
+    displayName ? "" : "Enter your name before creating or joining a room.",
+  );
+  if (!displayName) {
+    nameInput.reportValidity();
+    nameInput.focus();
+    return "";
+  }
+  return displayName;
 }
 
 function normalizeRoom(rawRoom) {
@@ -112,27 +125,40 @@ function sendMessage(payload) {
   appState.socket.send(JSON.stringify(payload));
 }
 
-async function ensureRtcConfig() {
+async function ensureRtcConfig(refresh = false) {
+  if (refresh) {
+    appState.rtcConfigReady = null;
+  }
+
   if (appState.rtcConfigReady) {
     return appState.rtcConfigReady;
   }
 
   appState.rtcConfigReady = fetch("/config.json")
     .then(async (response) => {
+      const payload = await response.json();
       if (!response.ok) {
-        throw new Error(`RTC config request failed with ${response.status}`);
+        throw new Error(payload.error || `RTC config request failed with ${response.status}`);
       }
 
-      const payload = await response.json();
       if (Array.isArray(payload.iceServers) && payload.iceServers.length > 0) {
         appState.iceServers = payload.iceServers;
       } else {
         appState.iceServers = DEFAULT_ICE_SERVERS;
       }
+      appState.turnConfigured = appState.iceServers.some((server) => {
+        const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+        return urls.some((url) => typeof url === "string" && /^turns?:/i.test(url));
+      });
+      if (!appState.turnConfigured) {
+        addActivity("No TURN relay is configured. Screen share and mic may fail between different networks; configure TURN in Render.");
+      }
     })
     .catch((error) => {
-      appState.iceServers = DEFAULT_ICE_SERVERS;
-      addActivity(`Using default STUN config. ${error.message}`);
+      appState.turnConfigured = false;
+      appState.rtcConfigReady = null;
+      addActivity(`RTC configuration failed: ${error.message}`);
+      throw error;
     });
 
   return appState.rtcConfigReady;
@@ -187,7 +213,11 @@ function addActivity(message) {
 
   const entry = document.createElement("article");
   entry.className = "feed-entry";
-  entry.innerHTML = `<time>${nowLabel()}</time><div>${message}</div>`;
+  const time = document.createElement("time");
+  time.textContent = nowLabel();
+  const detail = document.createElement("div");
+  detail.textContent = message;
+  entry.append(time, detail);
   activityFeed.prepend(entry);
 }
 
@@ -198,11 +228,13 @@ function addChatMessage({ author, text, self = false }) {
 
   const bubble = document.createElement("article");
   bubble.className = "chat-message";
-  bubble.innerHTML = `
-    <span class="meta">${self ? "You" : author} · ${nowLabel()}</span>
-    <div class="body"></div>
-  `;
-  bubble.querySelector(".body").textContent = text;
+  const meta = document.createElement("span");
+  meta.className = "meta";
+  meta.textContent = `${self ? "You" : author} · ${nowLabel()}`;
+  const body = document.createElement("div");
+  body.className = "body";
+  body.textContent = text;
+  bubble.append(meta, body);
   chatMessages.prepend(bubble);
 }
 
@@ -226,7 +258,7 @@ function updateUi() {
   micValue.textContent = appState.micEnabled ? "On" : "Off";
   shareValue.textContent = appState.screenSharing ? "On" : "Off";
   connectionValue.textContent = connected ? "Connected" : "Disconnected";
-  selfNameValue.textContent = appState.displayName;
+  selfNameValue.textContent = appState.displayName || "Not set";
 
   toggleMicButton.textContent = appState.micEnabled ? "Turn mic off" : "Turn mic on";
   if (!appState.joined) {
@@ -246,8 +278,8 @@ function updateUi() {
   toggleScreenButton.disabled = !appState.joined || !isHost;
 
   selfNameValue.textContent = isHost
-    ? `${appState.displayName || "Guest"} (Host)`
-    : appState.displayName || "Guest";
+    ? `${appState.displayName} (Host)`
+    : appState.displayName || "Not set";
   previewLabel.textContent = appState.screenSharing ? "Sharing now" : "Idle";
   previewLabel.className = "pill";
   if (appState.screenSharing) {
@@ -281,28 +313,40 @@ function renderParticipantList() {
   participants.forEach((participant) => {
     const card = document.createElement("article");
     card.className = "participant-card";
-    card.innerHTML = `
-      <div class="participant-head">
-        <div>
-          <strong>${participant.id === appState.clientId ? `${participant.name} (You)` : participant.name}</strong>
-          <p>${participant.isHost ? "Room host" : participant.id === appState.stagePeerId ? "On main stage" : "In the room"}</p>
-        </div>
-        <span class="participant-badge ${participant.screenSharing ? "share" : "off"}">
-          ${participant.screenSharing ? "Sharing" : "Watching"}
-        </span>
-      </div>
-      <div class="participant-status">
-        <span class="participant-badge ${participant.isHost ? "live" : "off"}">
-          ${participant.isHost ? "Host" : "Guest"}
-        </span>
-        <span class="participant-badge ${participant.micEnabled ? "live" : "off"}">
-          ${participant.micEnabled ? "Mic on" : "Mic off"}
-        </span>
-        <span class="participant-badge ${participant.id === appState.clientId ? "live" : "off"}">
-          ${participant.id === appState.clientId ? "You" : "Member"}
-        </span>
-      </div>
-    `;
+    const head = document.createElement("div");
+    head.className = "participant-head";
+    const identity = document.createElement("div");
+    const name = document.createElement("strong");
+    name.textContent = participant.id === appState.clientId
+      ? `${participant.name} (You)`
+      : participant.name;
+    const role = document.createElement("p");
+    role.textContent = participant.isHost
+      ? "Room host"
+      : participant.id === appState.stagePeerId
+        ? "On main stage"
+        : "In the room";
+    identity.append(name, role);
+
+    const shareBadge = document.createElement("span");
+    shareBadge.className = `participant-badge ${participant.screenSharing ? "share" : "off"}`;
+    shareBadge.textContent = participant.screenSharing ? "Sharing" : "Watching";
+    head.append(identity, shareBadge);
+
+    const status = document.createElement("div");
+    status.className = "participant-status";
+    [
+      [participant.isHost ? "Host" : "Guest", participant.isHost],
+      [participant.micEnabled ? "Mic on" : "Mic off", participant.micEnabled],
+      [participant.id === appState.clientId ? "You" : "Member", participant.id === appState.clientId],
+    ].forEach(([label, active]) => {
+      const badge = document.createElement("span");
+      badge.className = `participant-badge ${active ? "live" : "off"}`;
+      badge.textContent = label;
+      status.append(badge);
+    });
+
+    card.append(head, status);
 
     participantList.append(card);
   });
@@ -325,9 +369,15 @@ function getStageCandidates() {
 
 function syncAudioOutputs() {
   appState.peers.forEach((peerState, peerId) => {
-    const isOnStage = appState.stagePeerId === peerId && stageVideo.srcObject === peerState.remoteStream;
-    peerState.audioElement.muted = isOnStage;
-    peerState.audioElement.play().catch(() => {});
+    peerState.audioElement.muted = false;
+    peerState.audioElement.play().then(() => {
+      peerState.audioPlaybackBlocked = false;
+    }).catch(() => {
+      if (!peerState.audioPlaybackBlocked) {
+        peerState.audioPlaybackBlocked = true;
+        addActivity(`Audio from ${appState.participants.get(peerId)?.name || "a participant"} is blocked by the browser. Click the page and try again.`);
+      }
+    });
   });
 }
 
@@ -383,7 +433,7 @@ function applyStageSource() {
 
   if (peerState && peerState.remoteStream.getVideoTracks().length) {
     stageVideo.srcObject = peerState.remoteStream;
-    stageVideo.muted = false;
+    stageVideo.muted = true;
     stageLabel.textContent = `${stageParticipant?.name || "Guest"} is sharing`;
     stageLabel.className = "pill live";
     showStagePlaceholder(false);
@@ -412,7 +462,7 @@ async function announceParticipantStatus() {
 }
 
 async function syncPeerSenders(peerState) {
-  await Promise.allSettled([
+  await Promise.all([
     peerState.transceivers.mic.sender.replaceTrack(appState.micTrack),
     peerState.transceivers.screenAudio.sender.replaceTrack(appState.screenAudioTrack),
     peerState.transceivers.video.sender.replaceTrack(appState.screenVideoTrack),
@@ -420,7 +470,13 @@ async function syncPeerSenders(peerState) {
 }
 
 async function syncAllPeerSenders() {
-  await Promise.all([...appState.peers.values()].map((peerState) => syncPeerSenders(peerState)));
+  await Promise.all([...appState.peers.values()].map(async (peerState) => {
+    try {
+      await syncPeerSenders(peerState);
+    } catch (error) {
+      addActivity(`Media update failed for ${appState.participants.get(peerState.id)?.name || peerState.id}: ${error.message}`);
+    }
+  }));
 }
 
 function closePeer(peerId) {
@@ -458,6 +514,8 @@ function createPeerState(peerId) {
     ignoreOffer: false,
     isSettingRemoteAnswerPending: false,
     pendingCandidates: [],
+    iceRestartAttempts: 0,
+    audioPlaybackBlocked: false,
     transceivers: {
       mic: pc.addTransceiver("audio", { direction: "sendrecv" }),
       screenAudio: pc.addTransceiver("audio", { direction: "sendrecv" }),
@@ -466,13 +524,7 @@ function createPeerState(peerId) {
   };
 
   pc.addEventListener("track", (event) => {
-    const [stream] = event.streams;
-    const targetStream = stream || peerState.remoteStream;
-
-    if (stream && peerState.audioElement.srcObject !== stream) {
-      peerState.audioElement.srcObject = stream;
-      peerState.remoteStream = stream;
-    } else if (!stream && !peerState.remoteStream.getTracks().some((track) => track.id === event.track.id)) {
+    if (!peerState.remoteStream.getTracks().some((track) => track.id === event.track.id)) {
       peerState.remoteStream.addTrack(event.track);
     }
 
@@ -500,9 +552,31 @@ function createPeerState(peerId) {
     const state = pc.connectionState;
     addActivity(`Peer ${peerId} is ${state}.`);
 
-    if (state === "failed" || state === "closed") {
+    if (state === "closed") {
       closePeer(peerId);
       applyStageSource();
+    }
+  });
+
+  pc.addEventListener("iceconnectionstatechange", async () => {
+    if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+      addActivity(`Media connection to ${appState.participants.get(peerId)?.name || "a participant"} is ${pc.iceConnectionState}.`);
+    } else if (pc.iceConnectionState === "failed") {
+      if (peerState.iceRestartAttempts === 0 && typeof pc.restartIce === "function") {
+        peerState.iceRestartAttempts += 1;
+        addActivity(`Connection to ${appState.participants.get(peerId)?.name || "a participant"} failed. Retrying network connection...`);
+        try {
+          await ensureRtcConfig(true);
+          pc.setConfiguration({ iceServers: appState.iceServers });
+          pc.restartIce();
+        } catch (error) {
+          addActivity(`ICE restart failed for ${peerId}: ${error.message}`);
+        }
+      } else {
+        addActivity(appState.turnConfigured
+          ? `Peer connection to ${appState.participants.get(peerId)?.name || "a participant"} failed after retry. Check that the TURN service is active and its credentials are valid.`
+          : "Peer connection failed after retry. Configure METERED_DOMAIN and METERED_API_KEY in Render.");
+      }
     }
   });
 
@@ -525,7 +599,9 @@ function createPeerState(peerId) {
   });
 
   appState.peers.set(peerId, peerState);
-  syncPeerSenders(peerState);
+  syncPeerSenders(peerState).catch((error) => {
+    addActivity(`Media setup failed for ${peerId}: ${error.message}`);
+  });
   return peerState;
 }
 
@@ -653,8 +729,12 @@ async function joinRoom(roomCode) {
       return;
     }
 
+    const displayName = validateDisplayName();
+    if (!displayName) {
+      return;
+    }
+
     const normalizedRoom = normalizeRoom(roomCode);
-    const displayName = safeName();
 
     if (!normalizedRoom) {
       alert("Room code dalo ya Create room dabao.");
@@ -953,8 +1033,8 @@ function bootstrapFromUrl() {
     addActivity("Invite link detected. Add your name and click Join room.");
   }
 
-  nameInput.value = "Guest";
-  appState.displayName = "Guest";
+  nameInput.value = "";
+  appState.displayName = "";
   updateUi();
 }
 
@@ -974,7 +1054,7 @@ chatForm.addEventListener("submit", (event) => {
     sendMessage({
       type: "chat_message",
       text,
-      author: safeName(),
+      author: appState.displayName,
     });
     chatInput.value = "";
   } catch (error) {
@@ -985,6 +1065,10 @@ chatForm.addEventListener("submit", (event) => {
 createRoomButton.addEventListener("click", () => {
   if (appState.joined) {
     alert("Pehle current room leave karo, phir naya room create karo.");
+    return;
+  }
+
+  if (!validateDisplayName()) {
     return;
   }
 
@@ -1006,6 +1090,7 @@ copyInviteButton.addEventListener("click", copyInviteLink);
 leaveRoomButton.addEventListener("click", () => leaveRoom("Left the room."));
 toggleMicButton.addEventListener("click", toggleMic);
 toggleScreenButton.addEventListener("click", toggleScreenShare);
+nameInput.addEventListener("input", () => nameInput.setCustomValidity(""));
 
 window.addEventListener("beforeunload", () => {
   if (appState.joined && appState.socket && appState.socket.readyState === WebSocket.OPEN) {
@@ -1016,5 +1101,7 @@ window.addEventListener("beforeunload", () => {
     }
   }
 });
+
+document.addEventListener("pointerdown", syncAudioOutputs);
 
 bootstrapFromUrl();

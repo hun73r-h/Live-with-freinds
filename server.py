@@ -7,11 +7,14 @@ import os
 import socket
 import struct
 import threading
+import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlsplit
+from urllib.request import Request, urlopen
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent
@@ -20,6 +23,8 @@ STATE_LOCK = threading.RLock()
 CLIENTS: dict[str, "AppHandler"] = {}
 CLIENT_META: dict[str, dict[str, Any]] = {}
 ROOMS: dict[str, dict[str, Any]] = {}
+METERED_LOCK = threading.Lock()
+METERED_CACHE: tuple[float, list[dict[str, Any]]] | None = None
 
 
 def sanitize_room(raw_room: str | None) -> str:
@@ -40,16 +45,67 @@ def build_ice_servers() -> list[dict[str, Any]]:
         {"urls": "stun:stun1.l.google.com:19302"},
     ]
 
-    turn_url = os.environ.get("TURN_URL", "").strip()
-    if turn_url:
-        turn_server: dict[str, Any] = {"urls": turn_url}
-        username = os.environ.get("TURN_USERNAME", "").strip()
-        credential = os.environ.get("TURN_CREDENTIAL", "").strip()
-        if username:
-            turn_server["username"] = username
-        if credential:
-            turn_server["credential"] = credential
-        ice_servers.append(turn_server)
+    domain = os.environ.get("METERED_DOMAIN", "").strip().lower()
+    api_key = os.environ.get("METERED_API_KEY", "").strip()
+    if not domain and not api_key:
+        return ice_servers
+    if not domain or not api_key:
+        raise ValueError("METERED_DOMAIN and METERED_API_KEY must both be configured.")
+    if (
+        not domain.endswith(".metered.live")
+        or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789.-" for char in domain)
+    ):
+        raise ValueError("METERED_DOMAIN must be the app domain ending in .metered.live.")
+
+    global METERED_CACHE
+    with METERED_LOCK:
+        if METERED_CACHE and METERED_CACHE[0] > time.monotonic():
+            return [*ice_servers, *METERED_CACHE[1]]
+
+        query = urlencode({"apiKey": api_key})
+        endpoint = f"https://{domain}/api/v1/turn/credentials?{query}"
+        request = Request(
+            endpoint,
+            headers={"Accept": "application/json"},
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                turn_servers = json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            raise RuntimeError(
+                f"Metered TURN credentials request failed with HTTP {error.code}."
+            ) from None
+        except URLError as error:
+            raise RuntimeError(
+                f"Could not reach Metered TURN API: {error.reason}."
+            ) from None
+        except (TimeoutError, OSError) as error:
+            raise RuntimeError(f"Metered TURN request failed: {error}.") from None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise RuntimeError("Metered TURN API returned invalid JSON.") from None
+
+        if not isinstance(turn_servers, list) or not turn_servers:
+            raise RuntimeError("Metered TURN API returned no ICE server list.")
+        if not all(
+            isinstance(server, dict) and "urls" in server
+            for server in turn_servers
+        ):
+            raise RuntimeError("Metered TURN API returned an invalid ICE server list.")
+        if not any(
+            url.startswith(("turn:", "turns:"))
+            for server in turn_servers
+            for url in (
+                server["urls"]
+                if isinstance(server["urls"], list)
+                else [server["urls"]]
+            )
+            if isinstance(url, str)
+            and url.lower().startswith(("turn:", "turns:"))
+        ):
+            raise RuntimeError("Metered returned ICE servers without a TURN relay.")
+
+        METERED_CACHE = (time.monotonic() + 60, turn_servers)
+        return [*ice_servers, *turn_servers]
 
     return ice_servers
 
@@ -295,7 +351,13 @@ class AppHandler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/config.json":
-            self.send_json_response({"iceServers": build_ice_servers()})
+            try:
+                self.send_json_response({"iceServers": build_ice_servers()})
+            except (ValueError, RuntimeError) as error:
+                self.send_json_response(
+                    {"error": str(error)},
+                    status=HTTPStatus.SERVICE_UNAVAILABLE,
+                )
             return
 
         self.path = "/index.html" if parsed.path in {"", "/"} else parsed.path
@@ -355,10 +417,20 @@ class AppHandler(SimpleHTTPRequestHandler):
         message_type = message.get("type")
 
         if message_type == "join_room":
+            requested_name = str(message.get("name") or "").strip()
+            if not requested_name:
+                send_to(
+                    self.client_id,
+                    {
+                        "type": "room_error",
+                        "message": "Enter your name before creating or joining a room.",
+                    },
+                )
+                return
             join_room(
                 self.client_id,
                 str(message.get("room") or ""),
-                sanitize_name(message.get("name")),
+                sanitize_name(requested_name),
             )
             return
 
@@ -442,9 +514,13 @@ class AppHandler(SimpleHTTPRequestHandler):
     def send_json(self, payload: dict[str, Any]) -> None:
         self.send_frame(json.dumps(payload).encode("utf-8"))
 
-    def send_json_response(self, payload: dict[str, Any]) -> None:
+    def send_json_response(
+        self,
+        payload: dict[str, Any],
+        status: HTTPStatus = HTTPStatus.OK,
+    ) -> None:
         body = json.dumps(payload).encode("utf-8")
-        self.send_response(HTTPStatus.OK)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

@@ -8,7 +8,7 @@
       name="description"
       content="Create a room, invite friends, share your screen, and talk live together in the browser."
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=polish-2" />
     <link rel="icon" href="/favicon.ico?v=4" sizes="any" />
     <link rel="icon" type="image/png" href="/favicon.png?v=4" sizes="32x32" />
     <script src="./app.js" defer></script>
@@ -25,13 +25,13 @@
 
         <div class="hero-grid">
           <div class="hero-copy">
-            <p class="kicker">
-              No login. No database. Just create, invite, and share.
-            </p>
             <h1>Aao ab dikkhata tumhe kaise karte hai maze</h1>
             <p class="summary">
               Make a room code, send the invite, share your screen, and let
               everyone talk in real time with mic on or off whenever they want.
+            </p>
+            <p class="trust-line">
+              No login. No database. Just create, invite, and share.
             </p>
           </div>
 
@@ -50,7 +50,6 @@
         <aside class="control-panel">
           <div class="panel-head">
             <div>
-              <p class="panel-kicker">Room setup</p>
               <h2>Create or join in seconds</h2>
             </div>
             <p>No accounts needed.</p>
@@ -63,8 +62,11 @@
               type="text"
               maxlength="32"
               autocomplete="off"
+              required
+              aria-describedby="nameHint"
               placeholder="Example: Harsh"
             />
+            <small id="nameHint">Enter your name before creating or joining a room.</small>
           </label>
 
           <label class="field">
@@ -112,7 +114,6 @@
 
           <div class="panel-head room-controls">
             <div>
-              <p class="panel-kicker">Live controls</p>
               <h2>Talk and share</h2>
             </div>
             <p>Everyone can use the mic. Only the host can share the screen.</p>
@@ -170,7 +171,6 @@
             <article class="video-card main-stage">
               <div class="video-head">
                 <div>
-                  <p class="panel-kicker">Main stage</p>
                   <h2>Shared screen</h2>
                 </div>
                 <span class="pill" id="stageLabel"
@@ -193,7 +193,6 @@
             <article class="video-card preview-stage">
               <div class="video-head">
                 <div>
-                  <p class="panel-kicker">Your preview</p>
                   <h2>Local share</h2>
                 </div>
                 <span class="pill subtle" id="previewLabel">Idle</span>
@@ -218,7 +217,6 @@
             <article class="feed-card">
               <div class="panel-head">
                 <div>
-                  <p class="panel-kicker">Participants</p>
                   <h2>Who is in the room</h2>
                 </div>
                 <p>Mic and screen status update live.</p>
@@ -230,7 +228,6 @@
             <article class="feed-card">
               <div class="panel-head">
                 <div>
-                  <p class="panel-kicker">Room activity</p>
                   <h2>Realtime updates</h2>
                 </div>
                 <p>Join, leave, screen share, and signaling logs.</p>
@@ -247,7 +244,6 @@
           <article class="feed-card wide-card">
             <div class="panel-head">
               <div>
-                <p class="panel-kicker">Room chat</p>
                 <h2>Drop quick messages</h2>
               </div>
               <p>Useful when someone is muted or reconnecting.</p>
