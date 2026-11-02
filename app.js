@@ -36,6 +36,7 @@ const appState = {
   socketReady: null,
   heartbeatTimer: null,
   reconnectTimer: null,
+  reconnectStabilityTimer: null,
   reconnectAttempts: 0,
   reconnecting: false,
   clientId: null,
@@ -240,7 +241,7 @@ async function ensureSocket() {
       await handleSocketMessage(payload);
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (appState.socket !== socket) {
         return;
       }
@@ -248,13 +249,17 @@ async function ensureSocket() {
         clearInterval(appState.heartbeatTimer);
         appState.heartbeatTimer = null;
       }
+      if (appState.reconnectStabilityTimer) {
+        clearTimeout(appState.reconnectStabilityTimer);
+        appState.reconnectStabilityTimer = null;
+      }
       appState.socket = null;
       appState.socketReady = null;
       if (!opened) {
         reject(new Error("Signal server connection closed before opening."));
       }
       connectionValue.textContent = "Disconnected";
-      addActivity("Signal server disconnected.");
+      addActivity(`Signal server disconnected (code ${event.code}, ${event.wasClean ? "clean" : "unclean"}).`);
       if (appState.joined || appState.joiningRoom || appState.reconnecting) {
         appState.reconnecting = true;
         appState.joined = false;
@@ -610,7 +615,13 @@ function createPeerState(peerId) {
   });
 
   pc.addEventListener("icecandidate", (event) => {
-    if (!event.candidate) {
+    if (
+      !event.candidate ||
+      !appState.joined ||
+      appState.peers.get(peerId) !== peerState ||
+      !appState.socket ||
+      appState.socket.readyState !== WebSocket.OPEN
+    ) {
       return;
     }
 
@@ -851,6 +862,10 @@ async function leaveRoom(message = "Left the room.", notifyServer = true) {
     clearTimeout(appState.reconnectTimer);
     appState.reconnectTimer = null;
   }
+  if (appState.reconnectStabilityTimer) {
+    clearTimeout(appState.reconnectStabilityTimer);
+    appState.reconnectStabilityTimer = null;
+  }
   appState.reconnecting = false;
   appState.reconnectAttempts = 0;
 
@@ -1043,11 +1058,17 @@ async function handleSocketMessage(payload) {
       appState.joined = true;
       appState.joiningRoom = false;
       appState.reconnecting = false;
-      appState.reconnectAttempts = 0;
       if (appState.reconnectTimer) {
         clearTimeout(appState.reconnectTimer);
         appState.reconnectTimer = null;
       }
+      if (appState.reconnectStabilityTimer) {
+        clearTimeout(appState.reconnectStabilityTimer);
+      }
+      appState.reconnectStabilityTimer = setTimeout(() => {
+        appState.reconnectAttempts = 0;
+        appState.reconnectStabilityTimer = null;
+      }, 30000);
       appState.room = payload.room;
       appState.hostId = payload.hostId || appState.hostId;
       roomInput.value = payload.room;
