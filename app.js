@@ -34,6 +34,10 @@ const DEFAULT_ICE_SERVERS = [
 const appState = {
   socket: null,
   socketReady: null,
+  heartbeatTimer: null,
+  reconnectTimer: null,
+  reconnectAttempts: 0,
+  reconnecting: false,
   clientId: null,
   room: "",
   hostId: null,
@@ -125,6 +129,41 @@ function sendMessage(payload) {
   appState.socket.send(JSON.stringify(payload));
 }
 
+function scheduleSignalReconnect() {
+  if (appState.reconnectTimer || !appState.reconnecting) {
+    return;
+  }
+
+  const delay = Math.min(1000 * 2 ** appState.reconnectAttempts, 30000);
+  appState.reconnectAttempts += 1;
+  addActivity(`Retrying signal connection in ${Math.ceil(delay / 1000)} seconds...`);
+  appState.reconnectTimer = setTimeout(() => {
+    appState.reconnectTimer = null;
+    ensureSocket().catch((error) => {
+      addActivity(`Signal reconnect failed: ${error.message}`);
+    });
+  }, delay);
+}
+
+async function rejoinAfterSignalReconnect() {
+  try {
+    appState.joiningRoom = true;
+    updateUi();
+    await ensureRtcConfig(true);
+    sendMessage({
+      type: "join_room",
+      room: appState.room,
+      name: appState.displayName,
+    });
+    addActivity(`Rejoining room ${appState.room}...`);
+  } catch (error) {
+    appState.joiningRoom = false;
+    addActivity(`Could not restore room connection: ${error.message}`);
+    appState.socket?.close();
+    updateUi();
+  }
+}
+
 async function ensureRtcConfig(refresh = false) {
   if (refresh) {
     appState.rtcConfigReady = null;
@@ -174,13 +213,26 @@ async function ensureSocket() {
   }
 
   appState.socketReady = new Promise((resolve, reject) => {
+    let opened = false;
     const socket = new WebSocket(getSignalUrl());
     appState.socket = socket;
 
     socket.addEventListener("open", () => {
+      opened = true;
+      if (appState.heartbeatTimer) {
+        clearInterval(appState.heartbeatTimer);
+      }
+      appState.heartbeatTimer = setInterval(() => {
+        if (appState.socket === socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "heartbeat" }));
+        }
+      }, 20000);
       addActivity("Signal server connected.");
       updateUi();
       resolve();
+      if (appState.reconnecting) {
+        rejoinAfterSignalReconnect();
+      }
     });
 
     socket.addEventListener("message", async (event) => {
@@ -189,15 +241,36 @@ async function ensureSocket() {
     });
 
     socket.addEventListener("close", () => {
+      if (appState.socket !== socket) {
+        return;
+      }
+      if (appState.heartbeatTimer) {
+        clearInterval(appState.heartbeatTimer);
+        appState.heartbeatTimer = null;
+      }
       appState.socket = null;
       appState.socketReady = null;
+      if (!opened) {
+        reject(new Error("Signal server connection closed before opening."));
+      }
       connectionValue.textContent = "Disconnected";
       addActivity("Signal server disconnected.");
+      if (appState.joined || appState.joiningRoom || appState.reconnecting) {
+        appState.reconnecting = true;
+        appState.joined = false;
+        appState.joiningRoom = false;
+        appState.hostId = null;
+        [...appState.peers.keys()].forEach((peerId) => closePeer(peerId));
+        resetRoomUi();
+        scheduleSignalReconnect();
+      }
       updateUi();
     });
 
     socket.addEventListener("error", () => {
-      appState.socketReady = null;
+      if (appState.socket === socket) {
+        appState.socketReady = null;
+      }
       addActivity("Signal server error. Check the server and refresh.");
       reject(new Error("WebSocket connection failed."));
     });
@@ -273,7 +346,7 @@ function updateUi() {
 
   createRoomButton.disabled = appState.joined || appState.joiningRoom;
   joinRoomButton.disabled = appState.joined || appState.joiningRoom;
-  leaveRoomButton.disabled = !appState.joined;
+  leaveRoomButton.disabled = !appState.joined && !appState.reconnecting;
   toggleMicButton.disabled = !appState.joined;
   toggleScreenButton.disabled = !appState.joined || !isHost;
 
@@ -774,6 +847,13 @@ async function joinRoom(roomCode) {
 async function leaveRoom(message = "Left the room.", notifyServer = true) {
   const wasJoined = appState.joined;
 
+  if (appState.reconnectTimer) {
+    clearTimeout(appState.reconnectTimer);
+    appState.reconnectTimer = null;
+  }
+  appState.reconnecting = false;
+  appState.reconnectAttempts = 0;
+
   if (notifyServer && wasJoined && appState.socket && appState.socket.readyState === WebSocket.OPEN) {
     sendMessage({ type: "leave_room" });
   }
@@ -962,6 +1042,12 @@ async function handleSocketMessage(payload) {
     case "room_joined":
       appState.joined = true;
       appState.joiningRoom = false;
+      appState.reconnecting = false;
+      appState.reconnectAttempts = 0;
+      if (appState.reconnectTimer) {
+        clearTimeout(appState.reconnectTimer);
+        appState.reconnectTimer = null;
+      }
       appState.room = payload.room;
       appState.hostId = payload.hostId || appState.hostId;
       roomInput.value = payload.room;

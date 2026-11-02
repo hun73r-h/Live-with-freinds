@@ -37,7 +37,7 @@ The app can fetch TURN credentials from Metered Open Relay on the server. The Me
 - `METERED_DOMAIN` - your Metered app domain, such as `your-app.metered.live`
 - `METERED_API_KEY` - the TURN REST API key from Metered
 
-Without Metered credentials, the app uses STUN only; some networks may work, but others may fail to connect, hear audio, or receive screen share. The app caches the server-provided ICE configuration briefly and retries failed peer connections once.
+Without Metered credentials, the app uses STUN only; some networks may work, but others may fail to connect, hear audio, or receive screen share. The app caches the server-provided ICE configuration briefly, retries failed peer connections once, keeps signaling alive with heartbeats, and attempts to reconnect and rejoin the room if signaling drops.
 
 ## Important limit
 

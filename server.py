@@ -399,6 +399,7 @@ class AppHandler(SimpleHTTPRequestHandler):
                 if opcode is None:
                     break
                 if opcode == 0x8:
+                    self.send_frame(payload, opcode=0x8)
                     break
                 if opcode == 0x9:
                     self.send_frame(payload, opcode=0xA)
@@ -412,9 +413,14 @@ class AppHandler(SimpleHTTPRequestHandler):
             pass
         finally:
             unregister_client(self.client_id)
+            self.close_connection = True
 
     def route_message(self, message: dict[str, Any]) -> None:
         message_type = message.get("type")
+
+        if message_type == "heartbeat":
+            send_to(self.client_id, {"type": "heartbeat_ack"})
+            return
 
         if message_type == "join_room":
             requested_name = str(message.get("name") or "").strip()
