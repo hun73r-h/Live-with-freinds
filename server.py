@@ -321,10 +321,16 @@ def forward_signal(client_id: str, payload: dict[str, Any]) -> None:
         "senderId": client_id,
     }
 
-    if "description" in payload:
-        message["description"] = payload["description"]
-    if "candidate" in payload:
-        message["candidate"] = payload["candidate"]
+    for field in (
+        "description",
+        "candidate",
+        "messageId",
+        "chunkIndex",
+        "chunkCount",
+        "data",
+    ):
+        if field in payload:
+            message[field] = payload[field]
 
     send_to(target, message)
 
@@ -452,7 +458,7 @@ class AppHandler(SimpleHTTPRequestHandler):
             )
             return
 
-        if message_type in {"signal_description", "signal_candidate"}:
+        if message_type in {"signal_description", "signal_candidate", "signal_chunk"}:
             forward_signal(self.client_id, message)
             return
 

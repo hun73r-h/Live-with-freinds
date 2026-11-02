@@ -31,6 +31,12 @@ const DEFAULT_ICE_SERVERS = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+const MAX_SIGNAL_FRAME_BYTES = 3000;
+const SIGNAL_CHUNK_SIZE = 1800;
+const MAX_SIGNAL_MESSAGE_BYTES = 128 * 1024;
+const MAX_PENDING_SIGNAL_MESSAGES = 4;
+const SIGNAL_CHUNK_TTL_MS = 10000;
+
 const appState = {
   socket: null,
   socketReady: null,
@@ -57,6 +63,7 @@ const appState = {
   stoppingScreen: false,
   participants: new Map(),
   peers: new Map(),
+  signalChunks: new Map(),
   stagePeerId: null,
 };
 
@@ -127,7 +134,117 @@ function sendMessage(payload) {
     throw new Error("Signal server is not connected.");
   }
 
-  appState.socket.send(JSON.stringify(payload));
+  const serialized = JSON.stringify(payload);
+  const encoded = new TextEncoder().encode(serialized);
+  if (encoded.length <= MAX_SIGNAL_FRAME_BYTES) {
+    appState.socket.send(serialized);
+    return;
+  }
+
+  if (payload.type !== "signal_description" || encoded.length > MAX_SIGNAL_MESSAGE_BYTES) {
+    throw new Error("Signaling message is too large to send.");
+  }
+
+  let binary = "";
+  for (let offset = 0; offset < encoded.length; offset += 0x8000) {
+    binary += String.fromCharCode(...encoded.subarray(offset, offset + 0x8000));
+  }
+  const base64 = btoa(binary);
+  const messageId = crypto.randomUUID();
+  const chunks = base64.match(new RegExp(`.{1,${SIGNAL_CHUNK_SIZE}}`, "g")) || [""];
+
+  chunks.forEach((data, chunkIndex) => {
+    appState.socket.send(JSON.stringify({
+      type: "signal_chunk",
+      target: payload.target,
+      messageId,
+      chunkIndex,
+      chunkCount: chunks.length,
+      data,
+    }));
+  });
+}
+
+function receiveSignalChunk(payload) {
+  const { senderId, messageId, chunkIndex, chunkCount, data } = payload;
+  if (
+    typeof senderId !== "string" ||
+    typeof messageId !== "string" ||
+    !messageId ||
+    !Number.isInteger(chunkIndex) ||
+    !Number.isInteger(chunkCount) ||
+    chunkCount < 1 ||
+    chunkCount > 128 ||
+    chunkIndex < 0 ||
+    chunkIndex >= chunkCount ||
+    typeof data !== "string" ||
+    data.length > SIGNAL_CHUNK_SIZE ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(data)
+  ) {
+    addActivity("Received invalid signaling data; the peer connection may need to retry.");
+    return null;
+  }
+
+  const now = Date.now();
+  appState.signalChunks.forEach((entry, key) => {
+    if (entry.createdAt + SIGNAL_CHUNK_TTL_MS < now) {
+      appState.signalChunks.delete(key);
+    }
+  });
+
+  const key = `${senderId}:${messageId}`;
+  let entry = appState.signalChunks.get(key);
+  if (!entry) {
+    if (appState.signalChunks.size >= MAX_PENDING_SIGNAL_MESSAGES) {
+      addActivity("Too many signaling messages are pending; retry the room connection.");
+      return null;
+    }
+    entry = {
+      senderId,
+      chunkCount,
+      chunks: new Array(chunkCount),
+      receivedChunks: 0,
+      receivedBytes: 0,
+      createdAt: now,
+    };
+    appState.signalChunks.set(key, entry);
+  }
+
+  if (entry.chunkCount !== chunkCount || entry.senderId !== senderId) {
+    appState.signalChunks.delete(key);
+    addActivity("Signaling message chunks did not match; retry the peer connection.");
+    return null;
+  }
+  if (entry.chunks[chunkIndex] !== undefined) {
+    return null;
+  }
+
+  entry.chunks[chunkIndex] = data;
+  entry.receivedChunks += 1;
+  entry.receivedBytes += data.length;
+  if (entry.receivedBytes > Math.ceil(MAX_SIGNAL_MESSAGE_BYTES * 4 / 3)) {
+    appState.signalChunks.delete(key);
+    addActivity("Signaling message exceeded the allowed size.");
+    return null;
+  }
+  if (entry.receivedChunks !== entry.chunkCount) {
+    return null;
+  }
+
+  appState.signalChunks.delete(key);
+  try {
+    const binary = atob(entry.chunks.join(""));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const message = JSON.parse(new TextDecoder().decode(bytes));
+    if (message.type !== "signal_description") {
+      throw new Error("Unexpected signaling message type.");
+    }
+    message.senderId = senderId;
+    return message;
+  } catch (error) {
+    addActivity(`Could not restore a signaling message: ${error.message}`);
+    return null;
+  }
 }
 
 function scheduleSignalReconnect() {
@@ -1101,6 +1218,14 @@ async function handleSocketMessage(payload) {
     case "signal_description":
       await handleRemoteDescription(payload.senderId, payload.description);
       break;
+
+    case "signal_chunk": {
+      const message = receiveSignalChunk(payload);
+      if (message) {
+        await handleSocketMessage(message);
+      }
+      break;
+    }
 
     case "signal_candidate":
       await handleRemoteCandidate(payload.senderId, payload.candidate);
